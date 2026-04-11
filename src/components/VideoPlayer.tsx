@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { StreamData } from '@/lib/api';
 import { Download, ThumbsUp, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,38 +10,14 @@ interface VideoPlayerProps {
 }
 
 export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [quality, setQuality] = useState('');
-  const [showQuality, setShowQuality] = useState(false);
-
-  // Get best combined stream (video+audio)
-  const combinedStreams = stream.videoStreams
-    .filter((s) => !s.videoOnly && s.url)
-    .sort((a, b) => (b.height || 0) - (a.height || 0));
-
-  const hlsUrl = stream.hls;
-
-  // Playable streams: prefer HLS, fallback to combined
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (hlsUrl) {
-      video.src = hlsUrl;
-    } else if (combinedStreams.length > 0) {
-      video.src = combinedStreams[0].url;
-      setQuality(combinedStreams[0].quality);
-    }
-  }, [hlsUrl, stream]);
+  const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3`;
 
   const handleDownload = async () => {
-    // Get best available stream for download
-    const downloadStream = combinedStreams[0] || stream.videoStreams.find(s => s.url);
-    if (!downloadStream) {
+    const downloadStream = stream.videoStreams?.find(s => s.url && !s.videoOnly);
+    if (!downloadStream?.url) {
       toast.error('No downloadable stream available');
       return;
     }
-
     toast.info('Starting download...');
     try {
       const response = await fetch(downloadStream.url);
@@ -56,7 +32,6 @@ export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
       URL.revokeObjectURL(url);
       toast.success('Download started!');
     } catch {
-      // Fallback: open in new tab
       window.open(downloadStream.url, '_blank');
       toast.info('Opening video in new tab for download');
     }
