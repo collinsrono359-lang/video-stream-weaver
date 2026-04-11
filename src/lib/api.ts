@@ -87,9 +87,9 @@ export async function getTrending(region = 'US'): Promise<VideoItem[]> {
   return (data || []).filter((v: VideoItem) => v.type === 'stream');
 }
 
-export async function searchVideos(query: string, nextpage?: string): Promise<SearchResult> {
-  const params: Record<string, string> = { action: 'search', q: query, filter: 'videos' };
-  if (nextpage) params.nextpage = nextpage;
+export async function searchVideos(query: string, page?: string): Promise<SearchResult> {
+  const params: Record<string, string> = { action: 'search', q: query };
+  if (page) params.page = page;
   const data = await apiCall(params);
   return {
     items: (data.items || []).filter((v: VideoItem) => v.type === 'stream'),
