@@ -47,6 +47,13 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        "surface-hover": "hsl(var(--surface-hover))",
+        "surface-elevated": "hsl(var(--surface-elevated))",
+        chip: {
+          DEFAULT: "hsl(var(--chip))",
+          active: "hsl(var(--chip-active))",
+          "active-foreground": "hsl(var(--chip-active-foreground))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
