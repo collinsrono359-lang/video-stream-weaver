@@ -6,21 +6,39 @@ const corsHeaders = {
 const PIPED_INSTANCES = [
   'https://pipedapi.kavin.rocks',
   'https://pipedapi.adminforge.de',
+  'https://watchapi.whatever.social',
   'https://pipedapi.in.projectsegfau.lt',
 ];
 
-async function fetchWithFallback(path: string): Promise<Response> {
+async function fetchWithFallback(path: string): Promise<any> {
+  let lastError = '';
   for (const instance of PIPED_INSTANCES) {
     try {
+      console.log(`Trying ${instance}${path}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(`${instance}${path}`, {
-        headers: { 'User-Agent': 'VideoApp/1.0' },
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        signal: controller.signal,
       });
-      if (res.ok) return res;
-    } catch {
+      clearTimeout(timeout);
+      if (!res.ok) {
+        lastError = `${instance} returned ${res.status}`;
+        continue;
+      }
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        lastError = `${instance} returned non-JSON`;
+        continue;
+      }
+    } catch (e) {
+      lastError = `${instance} failed: ${e instanceof Error ? e.message : 'unknown'}`;
       continue;
     }
   }
-  throw new Error('All API instances failed');
+  throw new Error(`All API instances failed. Last error: ${lastError}`);
 }
 
 Deno.serve(async (req) => {
