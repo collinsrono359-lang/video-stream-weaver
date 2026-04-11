@@ -1,26 +1,37 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Header } from '@/components/Header';
 import { VideoGrid } from '@/components/VideoGrid';
-import { getTrending, VideoItem } from '@/lib/api';
+import { getTrending, searchVideos, VideoItem } from '@/lib/api';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { Loader2 } from 'lucide-react';
 
-const REGIONS = ['US', 'GB', 'DE', 'FR', 'JP', 'IN', 'BR', 'KR'];
+const POPULAR_QUERIES = ['trending music 2026', 'popular videos today', 'viral videos', 'top clips'];
 
 export default function Index() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [regionIdx, setRegionIdx] = useState(0);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState('');
 
-  const fetchTrending = useCallback(async (region: string, append = false) => {
+  const fetchVideos = useCallback(async (append = false) => {
     try {
       if (append) setLoadingMore(true);
       else setLoading(true);
       setError('');
 
-      const data = await getTrending(region);
+      // Try trending first, fallback to search
+      let data: VideoItem[] = [];
+      try {
+        data = await getTrending('US');
+      } catch {}
+
+      if (!data || data.length === 0) {
+        const query = POPULAR_QUERIES[Math.floor(Math.random() * POPULAR_QUERIES.length)];
+        const result = await searchVideos(query, append ? String(page) : '1');
+        data = result.items;
+      }
+
       setVideos((prev) => (append ? [...prev, ...data] : data));
     } catch (err) {
       setError('Failed to load videos. Please try again.');
@@ -29,22 +40,26 @@ export default function Index() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
-    fetchTrending('US');
-  }, [fetchTrending]);
+    fetchVideos();
+  }, []);
 
   const loadMore = useCallback(() => {
-    if (loadingMore || regionIdx >= REGIONS.length - 1) return;
-    const nextIdx = regionIdx + 1;
-    setRegionIdx(nextIdx);
-    fetchTrending(REGIONS[nextIdx], true);
-  }, [loadingMore, regionIdx, fetchTrending]);
+    if (loadingMore) return;
+    setPage((p) => p + 1);
+    setLoadingMore(true);
+    const query = POPULAR_QUERIES[Math.floor(Math.random() * POPULAR_QUERIES.length)];
+    searchVideos(query, String(page + 1))
+      .then((result) => {
+        setVideos((prev) => [...prev, ...result.items]);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMore(false));
+  }, [loadingMore, page]);
 
-  const sentinelRef = useInfiniteScroll(loadMore, {
-    enabled: !loadingMore && regionIdx < REGIONS.length - 1,
-  });
+  const sentinelRef = useInfiniteScroll(loadMore, { enabled: !loadingMore });
 
   return (
     <div className="min-h-screen bg-background">
@@ -55,10 +70,7 @@ export default function Index() {
         {error && !loading && (
           <div className="text-center py-12">
             <p className="text-muted-foreground mb-4">{error}</p>
-            <button
-              onClick={() => fetchTrending('US')}
-              className="text-primary hover:underline text-sm"
-            >
+            <button onClick={() => fetchVideos()} className="text-primary hover:underline text-sm">
               Retry
             </button>
           </div>

@@ -45,12 +45,12 @@ export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
   return (
     <div>
       <div className="relative w-full aspect-video bg-background rounded-xl overflow-hidden">
-        <video
-          ref={videoRef}
-          controls
-          autoPlay
+        <iframe
+          src={embedUrl}
           className="w-full h-full"
-          playsInline
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          title={stream.title}
         />
       </div>
 
