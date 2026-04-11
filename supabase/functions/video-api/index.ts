@@ -55,8 +55,7 @@ Deno.serve(async (req) => {
     switch (action) {
       case 'trending': {
         const region = url.searchParams.get('region') || 'US';
-        const res = await fetchWithFallback(`/trending?region=${region}`);
-        data = await res.json();
+        data = await fetchWithFallback(`/trending?region=${region}`);
         break;
       }
 
@@ -73,8 +72,7 @@ Deno.serve(async (req) => {
         const path = nextpage
           ? `/nextpage/search?q=${encodeURIComponent(query)}&filter=${filter}&nextpage=${encodeURIComponent(nextpage)}`
           : `/search?q=${encodeURIComponent(query)}&filter=${filter}`;
-        const res = await fetchWithFallback(path);
-        data = await res.json();
+        data = await fetchWithFallback(path);
         break;
       }
 
@@ -86,8 +84,7 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        const res = await fetchWithFallback(`/streams/${videoId}`);
-        data = await res.json();
+        data = await fetchWithFallback(`/streams/${videoId}`);
         break;
       }
 
@@ -99,8 +96,7 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        const res = await fetchWithFallback(`/channel/${channelId}`);
-        data = await res.json();
+        data = await fetchWithFallback(`/channel/${channelId}`);
         break;
       }
 
@@ -112,8 +108,7 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        const res = await fetchWithFallback(`/suggestions?query=${encodeURIComponent(query)}`);
-        data = await res.json();
+        data = await fetchWithFallback(`/suggestions?query=${encodeURIComponent(query)}`);
         break;
       }
 
