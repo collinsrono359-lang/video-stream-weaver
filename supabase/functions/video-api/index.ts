@@ -3,22 +3,23 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const PIPED_INSTANCES = [
-  'https://pipedapi.kavin.rocks',
-  'https://pipedapi.adminforge.de',
-  'https://watchapi.whatever.social',
-  'https://pipedapi.in.projectsegfau.lt',
+const INVIDIOUS_INSTANCES = [
+  'https://inv.nadeko.net',
+  'https://invidious.nerdvpn.de',
+  'https://invidious.jing.rocks',
+  'https://iv.ggtyler.dev',
+  'https://invidious.privacyredirect.com',
 ];
 
 async function fetchWithFallback(path: string): Promise<any> {
   let lastError = '';
-  for (const instance of PIPED_INSTANCES) {
+  for (const instance of INVIDIOUS_INSTANCES) {
     try {
       console.log(`Trying ${instance}${path}`);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      const timeout = setTimeout(() => controller.abort(), 10000);
       const res = await fetch(`${instance}${path}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
+        headers: { 'Accept': 'application/json' },
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -30,7 +31,7 @@ async function fetchWithFallback(path: string): Promise<any> {
       try {
         return JSON.parse(text);
       } catch {
-        lastError = `${instance} returned non-JSON`;
+        lastError = `${instance} returned non-JSON: ${text.substring(0, 100)}`;
         continue;
       }
     } catch (e) {
@@ -38,7 +39,23 @@ async function fetchWithFallback(path: string): Promise<any> {
       continue;
     }
   }
-  throw new Error(`All API instances failed. Last error: ${lastError}`);
+  throw new Error(`All instances failed. Last: ${lastError}`);
+}
+
+// Transform Invidious video format to our standard format
+function transformVideo(v: any) {
+  return {
+    url: `/watch?v=${v.videoId}`,
+    title: v.title || '',
+    thumbnail: v.videoThumbnails?.[0]?.url || '',
+    uploaderName: v.author || '',
+    uploaderUrl: `/channel/${v.authorId}`,
+    uploaderAvatar: v.authorThumbnails?.[0]?.url || '',
+    uploadedDate: v.publishedText || '',
+    duration: v.lengthSeconds || 0,
+    views: v.viewCount || 0,
+    type: 'stream',
+  };
 }
 
 Deno.serve(async (req) => {
@@ -55,24 +72,27 @@ Deno.serve(async (req) => {
     switch (action) {
       case 'trending': {
         const region = url.searchParams.get('region') || 'US';
-        data = await fetchWithFallback(`/trending?region=${region}`);
+        const raw = await fetchWithFallback(`/api/v1/trending?region=${region}`);
+        data = Array.isArray(raw) ? raw.map(transformVideo) : [];
         break;
       }
 
       case 'search': {
         const query = url.searchParams.get('q');
-        const filter = url.searchParams.get('filter') || 'videos';
-        const nextpage = url.searchParams.get('nextpage');
+        const page = url.searchParams.get('page') || '1';
         if (!query) {
           return new Response(JSON.stringify({ error: 'Query required' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        const path = nextpage
-          ? `/nextpage/search?q=${encodeURIComponent(query)}&filter=${filter}&nextpage=${encodeURIComponent(nextpage)}`
-          : `/search?q=${encodeURIComponent(query)}&filter=${filter}`;
-        data = await fetchWithFallback(path);
+        const raw = await fetchWithFallback(
+          `/api/v1/search?q=${encodeURIComponent(query)}&page=${page}&type=video`
+        );
+        data = {
+          items: Array.isArray(raw) ? raw.map(transformVideo) : [],
+          nextpage: String(parseInt(page) + 1),
+        };
         break;
       }
 
@@ -84,7 +104,46 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        data = await fetchWithFallback(`/streams/${videoId}`);
+        const raw = await fetchWithFallback(`/api/v1/videos/${videoId}`);
+        
+        // Transform to our stream format
+        data = {
+          title: raw.title || '',
+          description: raw.description || '',
+          uploadDate: raw.publishedText || '',
+          uploader: raw.author || '',
+          uploaderUrl: `/channel/${raw.authorId}`,
+          uploaderAvatar: raw.authorThumbnails?.[0]?.url || '',
+          views: raw.viewCount || 0,
+          likes: raw.likeCount || 0,
+          dislikes: raw.dislikeCount || 0,
+          duration: raw.lengthSeconds || 0,
+          hls: raw.hlsUrl || '',
+          videoStreams: (raw.formatStreams || []).map((s: any) => ({
+            url: s.url,
+            quality: s.qualityLabel || s.quality || '',
+            mimeType: s.type || '',
+            width: s.size ? parseInt(s.size.split('x')[0]) : 0,
+            height: s.size ? parseInt(s.size.split('x')[1]) : 0,
+            fps: 30,
+            videoOnly: false,
+          })),
+          audioStreams: (raw.adaptiveFormats || [])
+            .filter((s: any) => s.type?.startsWith('audio/'))
+            .map((s: any) => ({
+              url: s.url,
+              quality: s.audioQuality || '',
+              mimeType: s.type || '',
+              bitrate: s.bitrate || 0,
+            })),
+          relatedStreams: (raw.recommendedVideos || []).map(transformVideo),
+          subtitles: (raw.captions || []).map((c: any) => ({
+            url: c.url || '',
+            mimeType: 'text/vtt',
+            name: c.label || '',
+            code: c.language_code || '',
+          })),
+        };
         break;
       }
 
@@ -96,7 +155,8 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        data = await fetchWithFallback(`/channel/${channelId}`);
+        const raw = await fetchWithFallback(`/api/v1/channels/${channelId}`);
+        data = raw;
         break;
       }
 
@@ -108,15 +168,18 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        data = await fetchWithFallback(`/suggestions?query=${encodeURIComponent(query)}`);
+        const raw = await fetchWithFallback(
+          `/api/v1/search/suggestions?q=${encodeURIComponent(query)}`
+        );
+        data = raw?.suggestions || [];
         break;
       }
 
       default:
-        return new Response(JSON.stringify({ error: 'Invalid action. Use: trending, search, stream, channel, suggestions' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ error: 'Invalid action. Use: trending, search, stream, channel, suggestions' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
     }
 
     return new Response(JSON.stringify(data), {
@@ -124,9 +187,9 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error('Video API error:', error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Internal error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Internal error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 });
