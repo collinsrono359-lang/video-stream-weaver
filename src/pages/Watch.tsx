@@ -1,28 +1,56 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { VideoCard } from '@/components/VideoCard';
-import { getStream, StreamData } from '@/lib/api';
+import { getStream, searchVideos, StreamData, VideoItem } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { Loader2 } from 'lucide-react';
 
 export default function Watch() {
   const { videoId } = useParams<{ videoId: string }>();
   const [stream, setStream] = useState<StreamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [relatedVideos, setRelatedVideos] = useState<VideoItem[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!videoId) return;
     setLoading(true);
     setError('');
     setStream(null);
+    setRelatedVideos([]);
+    setPage(1);
 
     getStream(videoId)
-      .then(setStream)
+      .then((data) => {
+        setStream(data);
+        setRelatedVideos(data.relatedStreams?.filter((v) => v.type === 'stream') || []);
+      })
       .catch(() => setError('Failed to load video'))
       .finally(() => setLoading(false));
   }, [videoId]);
+
+  const loadMoreRelated = useCallback(() => {
+    if (loadingMore || !stream?.title) return;
+    setLoadingMore(true);
+    const query = stream.title.split(' ').slice(0, 4).join(' ');
+    searchVideos(query, String(page + 1))
+      .then((result) => {
+        const newVideos = result.items.filter(
+          (v) => !v.url.includes(videoId || '')
+        );
+        setRelatedVideos((prev) => [...prev, ...newVideos]);
+        setPage((p) => p + 1);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMore(false));
+  }, [loadingMore, stream?.title, page, videoId]);
+
+  const sentinelRef = useInfiniteScroll(loadMoreRelated, { enabled: !loadingMore && !loading });
 
   return (
     <div className="min-h-screen bg-background">
@@ -60,11 +88,17 @@ export default function Watch() {
                     </div>
                   </div>
                 ))}
-              {stream?.relatedStreams
-                ?.filter((v) => v.type === 'stream')
-                .map((video, i) => (
-                  <VideoCard key={`${video.url}-${i}`} video={video} layout="list" />
-                ))}
+              {relatedVideos.map((video, i) => (
+                <VideoCard key={`${video.url}-${i}`} video={video} layout="list" />
+              ))}
+
+              {loadingMore && (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              <div ref={sentinelRef} className="h-1" />
             </div>
           </div>
         </div>
