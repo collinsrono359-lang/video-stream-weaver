@@ -6,50 +6,53 @@
 
 @layer base {
   :root {
-    --background: 0 0% 6%;
+    --background: 240 20% 10%;
     --foreground: 0 0% 95%;
 
-    --card: 0 0% 10%;
+    --card: 240 18% 14%;
     --card-foreground: 0 0% 95%;
 
-    --popover: 0 0% 10%;
+    --popover: 240 18% 14%;
     --popover-foreground: 0 0% 95%;
 
-    --primary: 0 100% 50%;
+    --primary: 270 80% 60%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 0 0% 15%;
+    --secondary: 240 15% 18%;
     --secondary-foreground: 0 0% 90%;
 
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 240 15% 20%;
+    --muted-foreground: 240 10% 55%;
 
-    --accent: 0 0% 18%;
-    --accent-foreground: 0 0% 95%;
+    --accent: 270 60% 50%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
-    --ring: 0 100% 50%;
+    --border: 240 15% 22%;
+    --input: 240 15% 20%;
+    --ring: 270 80% 60%;
 
     --radius: 0.75rem;
 
-    --surface-hover: 0 0% 14%;
-    --surface-elevated: 0 0% 12%;
-    --chip: 0 0% 20%;
-    --chip-active: 0 0% 100%;
-    --chip-active-foreground: 0 0% 6%;
+    --surface-hover: 240 15% 16%;
+    --surface-elevated: 240 18% 14%;
+    --chip: 240 15% 22%;
+    --chip-active: 270 80% 60%;
+    --chip-active-foreground: 0 0% 100%;
 
-    --sidebar-background: 0 0% 8%;
+    --sidebar-background: 240 20% 8%;
     --sidebar-foreground: 0 0% 90%;
-    --sidebar-primary: 0 100% 50%;
+    --sidebar-primary: 270 80% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent: 240 15% 18%;
     --sidebar-accent-foreground: 0 0% 95%;
-    --sidebar-border: 0 0% 18%;
-    --sidebar-ring: 0 100% 50%;
+    --sidebar-border: 240 15% 22%;
+    --sidebar-ring: 270 80% 60%;
+
+    --warning: 45 93% 47%;
+    --warning-foreground: 0 0% 100%;
   }
 }
 
@@ -63,7 +66,6 @@
     font-family: 'Inter', system-ui, sans-serif;
   }
 
-  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
   }

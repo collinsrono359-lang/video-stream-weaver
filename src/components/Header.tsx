@@ -17,7 +17,7 @@ export function Header() {
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
             <Play className="w-4 h-4 text-primary-foreground fill-current ml-0.5" />
           </div>
-          <span className="text-lg font-bold text-foreground hidden sm:block">VidStream</span>
+          <span className="text-lg font-bold text-primary hidden sm:block">MediaFusion</span>
         </button>
       )}
 
@@ -36,7 +36,7 @@ export function Header() {
         </button>
         <button
           onClick={() => navigate('/developers')}
-          className="p-2 rounded-full hover:bg-accent transition-colors"
+          className="p-2 rounded-full hover:bg-accent transition-colors hidden sm:block"
           title="Developer Portal"
         >
           <Code2 className="w-5 h-5 text-foreground" />
