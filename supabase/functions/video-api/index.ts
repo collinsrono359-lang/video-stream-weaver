@@ -9,16 +9,46 @@ const YT_HEADERS = {
   'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
-function extractInitialData(html: string): any {
-  const match = html.match(/var ytInitialData = ({.*?});<\/script>/s);
-  if (match) {
-    try { return JSON.parse(match[1]); } catch {}
-  }
-  const match2 = html.match(/ytInitialData\s*=\s*({.*?});\s*(?:window|var)/s);
-  if (match2) {
-    try { return JSON.parse(match2[1]); } catch {}
+function extractJsonFromHtml(html: string, varName: string): any {
+  const pattern = new RegExp(`${varName}\\s*=\\s*`, 'g');
+  const match = pattern.exec(html);
+  if (!match) return null;
+
+  const start = match.index + match[0].length;
+  // Bracket-count based extraction for reliability
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < html.length; i++) {
+    const c = html[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\') { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === '{' || c === '[') depth++;
+    else if (c === '}' || c === ']') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(html.substring(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
   }
   return null;
+}
+
+function parseDuration(text: string): number {
+  const parts = text.split(':').map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
+
+function parseViewCount(text: string): number {
+  return parseInt(text.replace(/[^0-9]/g, '')) || 0;
 }
 
 function extractVideoRenderer(renderer: any) {
@@ -35,13 +65,8 @@ function extractVideoRenderer(renderer: any) {
     renderer.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
   const channelThumb = renderer.channelThumbnailSupportedRenderers?.channelThumbnailWithLinkRenderer?.thumbnail?.thumbnails?.[0]?.url || '';
   const viewText = renderer.viewCountText?.simpleText || renderer.viewCountText?.runs?.map((r: any) => r.text).join('') || '0 views';
-  const views = parseInt(viewText.replace(/[^0-9]/g, '')) || 0;
   const publishedText = renderer.publishedTimeText?.simpleText || renderer.publishedTimeText?.runs?.[0]?.text || '';
   const lengthText = renderer.lengthText?.simpleText || '0:00';
-  const parts = lengthText.split(':').map(Number);
-  let duration = 0;
-  if (parts.length === 3) duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  else if (parts.length === 2) duration = parts[0] * 60 + parts[1];
 
   return {
     url: `/watch?v=${videoId}`,
@@ -51,8 +76,61 @@ function extractVideoRenderer(renderer: any) {
     uploaderUrl: `/channel/${channelId}`,
     uploaderAvatar: channelThumb,
     uploadedDate: publishedText,
-    duration,
-    views,
+    duration: parseDuration(lengthText),
+    views: parseViewCount(viewText),
+    type: 'stream',
+  };
+}
+
+function extractLockupViewModel(lvm: any) {
+  if (!lvm) return null;
+  const videoId = lvm.contentId;
+  if (!videoId) return null;
+
+  const meta = lvm.metadata?.lockupMetadataViewModel || {};
+  const title = meta.title?.content || '';
+  const thumbnail = lvm.contentImage?.thumbnailViewModel?.image?.sources?.slice(-1)[0]?.url ||
+    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+  // Extract metadata parts (channel, views, date)
+  const rows = meta.metadata?.contentMetadataViewModel?.metadataRows || [];
+  let channelName = '';
+  let viewsText = '';
+  let uploadedDate = '';
+  for (const row of rows) {
+    for (const part of (row.metadataParts || [])) {
+      const text = part.text?.content || '';
+      if (!channelName && !text.includes('view') && !text.includes('ago') && !text.includes('hour') && !text.includes('minute') && !text.includes('day') && !text.includes('week') && !text.includes('month') && !text.includes('year') && !text.includes('Stream')) {
+        channelName = text;
+      } else if (text.includes('view')) {
+        viewsText = text;
+      } else if (text.includes('ago') || text.includes('hour') || text.includes('day') || text.includes('week') || text.includes('month') || text.includes('year') || text.includes('Stream')) {
+        uploadedDate = text;
+      }
+    }
+  }
+
+  // Duration from overlay badge
+  let durationText = '0:00';
+  const overlays = lvm.contentImage?.thumbnailViewModel?.overlays || [];
+  for (const ov of overlays) {
+    const badge = ov.thumbnailBottomOverlayViewModel?.badges?.[0]?.thumbnailBadgeViewModel;
+    if (badge?.text && badge.text.includes(':')) {
+      durationText = badge.text;
+      break;
+    }
+  }
+
+  return {
+    url: `/watch?v=${videoId}`,
+    title,
+    thumbnail,
+    uploaderName: channelName,
+    uploaderUrl: '',
+    uploaderAvatar: '',
+    uploadedDate,
+    duration: parseDuration(durationText),
+    views: parseViewCount(viewsText),
     type: 'stream',
   };
 }
@@ -70,6 +148,39 @@ async function fetchYouTubePage(url: string): Promise<string> {
   }
 }
 
+function extractRelatedVideos(ytData: any): any[] {
+  const videos: any[] = [];
+  const secondaryResults = ytData?.contents?.twoColumnWatchNextResults?.secondaryResults
+    ?.secondaryResults?.results || [];
+
+  for (const item of secondaryResults) {
+    // Old format
+    if (item.compactVideoRenderer) {
+      const v = extractVideoRenderer(item.compactVideoRenderer);
+      if (v) videos.push(v);
+    }
+    // New format: itemSectionRenderer containing lockupViewModels
+    if (item.itemSectionRenderer) {
+      for (const content of (item.itemSectionRenderer.contents || [])) {
+        if (content.lockupViewModel) {
+          const v = extractLockupViewModel(content.lockupViewModel);
+          if (v) videos.push(v);
+        }
+        if (content.compactVideoRenderer) {
+          const v = extractVideoRenderer(content.compactVideoRenderer);
+          if (v) videos.push(v);
+        }
+      }
+    }
+    // Direct lockupViewModel
+    if (item.lockupViewModel) {
+      const v = extractLockupViewModel(item.lockupViewModel);
+      if (v) videos.push(v);
+    }
+  }
+  return videos;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -85,7 +196,7 @@ Deno.serve(async (req) => {
       case 'trending': {
         const region = url.searchParams.get('region') || 'US';
         const html = await fetchYouTubePage(`https://www.youtube.com/feed/trending?gl=${region}`);
-        const ytData = extractInitialData(html);
+        const ytData = extractJsonFromHtml(html, 'ytInitialData');
         if (!ytData) throw new Error('Failed to extract data');
 
         const videos: any[] = [];
@@ -119,7 +230,7 @@ Deno.serve(async (req) => {
         const html = await fetchYouTubePage(
           `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%3D%3D`
         );
-        const ytData = extractInitialData(html);
+        const ytData = extractJsonFromHtml(html, 'ytInitialData');
         if (!ytData) throw new Error('Failed to extract search data');
 
         const videos: any[] = [];
@@ -146,33 +257,14 @@ Deno.serve(async (req) => {
         }
 
         const html = await fetchYouTubePage(`https://www.youtube.com/watch?v=${videoId}`);
-        const ytData = extractInitialData(html);
-
-        // Extract player data
-        const playerMatch = html.match(/var ytInitialPlayerResponse = ({.*?});<\/script>/s) ||
-          html.match(/ytInitialPlayerResponse\s*=\s*({.*?});\s*(?:var|window)/s);
-        let playerData: any = null;
-        if (playerMatch) {
-          try { playerData = JSON.parse(playerMatch[1]); } catch {}
-        }
+        const ytData = extractJsonFromHtml(html, 'ytInitialData');
+        const playerData = extractJsonFromHtml(html, 'ytInitialPlayerResponse');
 
         const videoDetails = playerData?.videoDetails || {};
         const microformat = playerData?.microformat?.playerMicroformatRenderer || {};
-
-        // Get related videos
-        const relatedVideos: any[] = [];
-        const secondaryResults = ytData?.contents?.twoColumnWatchNextResults?.secondaryResults
-          ?.secondaryResults?.results || [];
-        for (const item of secondaryResults) {
-          const renderer = item.compactVideoRenderer;
-          if (renderer) {
-            const v = extractVideoRenderer(renderer);
-            if (v) relatedVideos.push(v);
-          }
-        }
-
-        // Get streaming data - use embed URL as primary source (no watermark)
         const streamingData = playerData?.streamingData || {};
+
+        const relatedVideos = extractRelatedVideos(ytData);
 
         data = {
           title: videoDetails.title || '',
@@ -205,7 +297,6 @@ Deno.serve(async (req) => {
             })),
           relatedStreams: relatedVideos,
           subtitles: [],
-          // Provide embed URL as a reliable playback method
           embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`,
         };
         break;
@@ -226,7 +317,6 @@ Deno.serve(async (req) => {
         );
         clearTimeout(timeout);
         const text = await res.text();
-        // Parse JSONP response
         const match = text.match(/\[.*\]/s);
         if (match) {
           try {
