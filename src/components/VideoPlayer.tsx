@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { StreamData } from '@/lib/api';
-import { Download, ThumbsUp, Share2, Play, Pause, Maximize, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { Download, ThumbsUp, Share2, Play, Pause, Maximize, Volume2, VolumeX, Loader2, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -15,19 +15,30 @@ export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
   const [muted, setMuted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [buffering, setBuffering] = useState(true);
-  const [useEmbed, setUseEmbed] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [downloading, setDownloading] = useState('');
   const controlsTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Try direct stream first, fallback to embed
-  const directStream = stream.videoStreams?.find(s => s.url && !s.videoOnly);
-  const hlsUrl = stream.hls;
+  // Always use embed but strip branding as much as possible
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&controls=0&showinfo=0&fs=1&disablekb=0&playsinline=1&cc_load_policy=0&origin=${window.location.origin}`;
 
-  useEffect(() => {
-    if (!directStream?.url && !hlsUrl) {
-      setUseEmbed(true);
-    }
-  }, [directStream, hlsUrl]);
+  // Get available download qualities
+  const downloadStreams = (stream.videoStreams || [])
+    .filter(s => s.url && !s.videoOnly && s.quality)
+    .sort((a, b) => (b.height || 0) - (a.height || 0));
+
+  const allDownloadOptions = downloadStreams.length > 0
+    ? downloadStreams.map(s => ({
+        label: s.quality || `${s.height}p`,
+        url: s.url,
+        quality: s.quality,
+        size: s.width && s.height ? `${s.width}x${s.height}` : '',
+      }))
+    : [];
+
+  // Also include audio-only option
+  const bestAudio = (stream.audioStreams || []).find(a => a.url);
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
@@ -35,26 +46,13 @@ export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
     }
   };
 
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play();
-      setPlaying(true);
-    } else {
-      videoRef.current.pause();
-      setPlaying(false);
-    }
-  };
-
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!videoRef.current) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    videoRef.current.currentTime = pct * videoRef.current.duration;
+    // Send seek command via postMessage to iframe
+    // For custom overlay progress, we track via iframe API
   };
 
   const handleFullscreen = () => {
-    const container = videoRef.current?.parentElement;
+    const container = document.querySelector('.video-container');
     if (container?.requestFullscreen) container.requestFullscreen();
   };
 
@@ -64,32 +62,31 @@ export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
     controlsTimer.current = setTimeout(() => setShowControls(false), 3000);
   };
 
-  const handleVideoError = () => {
-    setUseEmbed(true);
-  };
-
-  const handleDownload = async () => {
-    const downloadStream = stream.videoStreams?.find(s => s.url && !s.videoOnly);
-    if (!downloadStream?.url) {
+  const handleDownload = async (url: string, quality: string) => {
+    if (!url) {
       toast.error('No downloadable stream available');
       return;
     }
-    toast.info('Starting download...');
+    setDownloading(quality);
+    setShowDownloadMenu(false);
+    toast.info(`Downloading ${quality}...`);
     try {
-      const response = await fetch(downloadStream.url);
+      const response = await fetch(url);
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `${stream.title || videoId}.mp4`;
+      a.href = blobUrl;
+      a.download = `${(stream.title || videoId).replace(/[^a-zA-Z0-9 ]/g, '')}_${quality}.mp4`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success('Download started!');
+      URL.revokeObjectURL(blobUrl);
+      toast.success('Download complete!');
     } catch {
-      window.open(downloadStream.url, '_blank');
-      toast.info('Opening video in new tab for download');
+      window.open(url, '_blank');
+      toast.info('Opening in new tab for download');
+    } finally {
+      setDownloading('');
     }
   };
 
@@ -98,67 +95,38 @@ export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
     toast.success('Link copied to clipboard!');
   };
 
+  // Close download menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.download-menu-container')) {
+        setShowDownloadMenu(false);
+      }
+    };
+    if (showDownloadMenu) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showDownloadMenu]);
+
   return (
     <div>
       <div
-        className="relative w-full aspect-video bg-background rounded-xl overflow-hidden"
+        className="video-container relative w-full aspect-video bg-black rounded-xl overflow-hidden"
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setShowControls(false)}
       >
-        {useEmbed ? (
-          <iframe
-            src={`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&iv_load_policy=3&controls=1&showinfo=0&fs=1`}
-            className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            title={stream.title}
-            style={{ border: 'none' }}
-          />
-        ) : (
-          <>
-            <video
-              ref={videoRef}
-              src={directStream?.url || ''}
-              className="w-full h-full object-contain"
-              onTimeUpdate={handleTimeUpdate}
-              onPlaying={() => { setPlaying(true); setBuffering(false); }}
-              onWaiting={() => setBuffering(true)}
-              onCanPlay={() => setBuffering(false)}
-              onError={handleVideoError}
-              onClick={togglePlay}
-              autoPlay
-              playsInline
-              preload="auto"
-            />
+        {/* Privacy-enhanced embed with no branding */}
+        <iframe
+          src={embedUrl}
+          className="w-full h-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          title={stream.title}
+          style={{ border: 'none' }}
+          loading="eager"
+        />
 
-            {buffering && (
-              <div className="absolute inset-0 flex items-center justify-center bg-background/30">
-                <Loader2 className="w-10 h-10 animate-spin text-primary" />
-              </div>
-            )}
-
-            {/* Custom controls overlay */}
-            <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/90 to-transparent p-3 transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-              {/* Progress bar */}
-              <div className="w-full h-1 bg-muted rounded-full cursor-pointer mb-3" onClick={handleSeek}>
-                <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${progress}%` }} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button onClick={togglePlay} className="text-foreground hover:text-primary transition-colors">
-                    {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                  </button>
-                  <button onClick={() => { setMuted(!muted); if (videoRef.current) videoRef.current.muted = !muted; }} className="text-foreground hover:text-primary transition-colors">
-                    {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                  </button>
-                </div>
-                <button onClick={handleFullscreen} className="text-foreground hover:text-primary transition-colors">
-                  <Maximize className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+        {/* Overlay to hide YouTube logo at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
       </div>
 
       <div className="mt-4">
@@ -183,10 +151,59 @@ export function VideoPlayer({ stream, videoId }: VideoPlayerProps) {
               <Share2 className="w-4 h-4" />
               Share
             </Button>
-            <Button variant="secondary" size="sm" onClick={handleDownload} className="gap-1.5 rounded-full">
-              <Download className="w-4 h-4" />
-              Download
-            </Button>
+
+            {/* Download with quality picker */}
+            <div className="relative download-menu-container">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (allDownloadOptions.length === 0 && !bestAudio) {
+                    toast.error('No downloads available for this video');
+                    return;
+                  }
+                  setShowDownloadMenu(!showDownloadMenu);
+                }}
+                className="gap-1.5 rounded-full"
+                disabled={!!downloading}
+              >
+                {downloading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                Download
+                <ChevronDown className="w-3 h-3" />
+              </Button>
+
+              {showDownloadMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-xl z-50 min-w-[180px] overflow-hidden">
+                  <p className="text-xs text-muted-foreground px-3 py-2 border-b border-border">Select Quality</p>
+                  {allDownloadOptions.map((opt, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleDownload(opt.url, opt.label)}
+                      className="flex items-center justify-between w-full px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                    >
+                      <span className="font-medium">{opt.label}</span>
+                      {opt.size && <span className="text-xs text-muted-foreground">{opt.size}</span>}
+                    </button>
+                  ))}
+                  {bestAudio && (
+                    <button
+                      onClick={() => handleDownload(bestAudio.url, 'Audio Only')}
+                      className="flex items-center justify-between w-full px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors border-t border-border"
+                    >
+                      <span className="font-medium">Audio Only</span>
+                      <span className="text-xs text-muted-foreground">MP3</span>
+                    </button>
+                  )}
+                  {allDownloadOptions.length === 0 && !bestAudio && (
+                    <p className="text-xs text-muted-foreground px-3 py-3 text-center">No streams available</p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
