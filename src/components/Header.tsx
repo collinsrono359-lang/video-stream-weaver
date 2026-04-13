@@ -1,11 +1,30 @@
 import { SearchBar } from './SearchBar';
-import { Play, Code2, Menu } from 'lucide-react';
+import { Play, Code2, Menu, LogIn, LogOut, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 export function Header() {
   const navigate = useNavigate();
   const [mobileSearch, setMobileSearch] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user || null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    toast.success('Signed out');
+    navigate('/');
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border h-14 flex items-center px-4 gap-4">
@@ -41,6 +60,33 @@ export function Header() {
         >
           <Code2 className="w-5 h-5 text-foreground" />
         </button>
+        {user ? (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => navigate('/profile')}
+              className="p-2 rounded-full hover:bg-accent transition-colors"
+            >
+              <User className="w-5 h-5 text-foreground" />
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="p-2 rounded-full hover:bg-accent transition-colors hidden sm:block"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4 text-foreground" />
+            </button>
+          </div>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate('/auth')}
+            className="gap-1.5 hidden sm:flex"
+          >
+            <LogIn className="w-4 h-4" />
+            Sign In
+          </Button>
+        )}
       </div>
     </header>
   );
