@@ -14,13 +14,105 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      api_keys: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          key: string
+          last_used_at: string | null
+          name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          key: string
+          last_used_at?: string | null
+          name?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          key?: string
+          last_used_at?: string | null
+          name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          amount: number | null
+          created_at: string
+          expires_at: string
+          id: string
+          pesapal_tracking_id: string | null
+          plan: string
+          started_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          pesapal_tracking_id?: string | null
+          plan?: string
+          started_at?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          pesapal_tracking_id?: string | null
+          plan?: string
+          started_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_api_key: { Args: never; Returns: string }
     }
     Enums: {
       [_ in never]: never
